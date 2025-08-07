@@ -4,12 +4,11 @@ run-name: ${{ inputs.tag }} (${{ inputs.release_number }})
 
 on:
   workflow_dispatch:
-inputs:
-  tag:
-    description: 'Tag for release (ex. 1.2.3.45)'
-    type: string
-    required: true
-    default: '9.0.4.54'
+    inputs:
+      tag:
+        description: 'Tag for release (ex. 1.2.3.45)'
+        type: string
+        required: true
       release_number:
         description: 'Sequence number of the release (ex. x.x.x.<number>)'
         type: string
