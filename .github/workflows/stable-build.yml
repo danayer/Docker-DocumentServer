@@ -52,6 +52,13 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
+      - name: Verify Docker Hub access
+        run: |
+          echo "Verifying access to target repository..."
+          docker pull hello-world
+          echo "Docker Hub authentication successful"
+        shell: bash
+
       - name: Build documentserver-release
         env:
           TARGET: ${{ matrix.images }}
@@ -59,14 +66,31 @@ jobs:
         run: |
           set -eux
           TESTING_IMAGE=${COMPANY_NAME}/4testing-${PRODUCT_NAME}${PRODUCT_EDITION}
-            export PRODUCT_EDITION
-            export PULL_TAG=${VERSION}
-            export TAG=${VERSION%.*}.${RELEASE_NUMBER}
-            export SHORTER_TAG=${VERSION%.*}
-            export SHORTEST_TAG=${VERSION%.*.*}
-            docker buildx bake -f docker-bake.hcl "${TARGET}" --push
+          export PRODUCT_EDITION
+          export PULL_TAG=${VERSION}
+          export TAG=${VERSION%.*}.${RELEASE_NUMBER}
+          export SHORTER_TAG=${VERSION%.*}
+          export SHORTEST_TAG=${VERSION%.*.*}
+          
+          echo "Building with the following tags:"
+          echo "PULL_TAG: ${PULL_TAG}"
+          echo "TAG: ${TAG}"
+          echo "SHORTER_TAG: ${SHORTER_TAG}"
+          echo "SHORTEST_TAG: ${SHORTEST_TAG}"
+          echo "Target repository: ${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION}"
+          
+          # Attempt to build and push
+          if docker buildx bake -f docker-bake.hcl "${TARGET}" --push; then
             echo "DONE: Build success >> exit with 0"
             exit 0
+          else
+            echo "ERROR: Build or push failed"
+            echo "Please verify:"
+            echo "1. Docker Hub credentials have push access to ${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION}"
+            echo "2. The repository ${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION} exists"
+            echo "3. The authentication token has sufficient permissions"
+            exit 1
+          fi
         shell: bash
 
   build-nonexample:
