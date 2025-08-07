@@ -19,6 +19,11 @@ on:
         type: boolean
         required: true
         default: true
+      dry_run:
+        description: 'Build only (do not push to registry)'
+        type: boolean
+        required: false
+        default: false
 
 env:
   COMPANY_NAME: "onlyoffice"
@@ -26,6 +31,7 @@ env:
   VERSION: ${{ github.event.inputs.tag }}
   RELEASE_NUMBER: ${{ github.event.inputs.release_number }}
   LATEST: ${{ github.event.inputs.latest }}
+  DRY_RUN: ${{ github.event.inputs.dry_run }}
 
 jobs:
   build:
@@ -57,6 +63,18 @@ jobs:
           echo "Verifying access to target repository..."
           docker pull hello-world
           echo "Docker Hub authentication successful"
+          
+          # Test repository access for each edition
+          echo "Testing repository access..."
+          for edition in "" "-ee" "-de"; do
+            repo="${COMPANY_NAME}/${PRODUCT_NAME}${edition}"
+            echo "Checking access to ${repo}..."
+            if docker manifest inspect "${repo}:latest" >/dev/null 2>&1; then
+              echo "✓ Can read ${repo}"
+            else
+              echo "✗ Cannot read ${repo} (may not exist or no access)"
+            fi
+          done
         shell: bash
 
       - name: Build documentserver-release
@@ -67,28 +85,63 @@ jobs:
           set -eux
           TESTING_IMAGE=${COMPANY_NAME}/4testing-${PRODUCT_NAME}${PRODUCT_EDITION}
           export PRODUCT_EDITION
-          export PULL_TAG=${VERSION}
-          export TAG=${VERSION%.*}.${RELEASE_NUMBER}
-          export SHORTER_TAG=${VERSION%.*}
-          export SHORTEST_TAG=${VERSION%.*.*}
+          export PULL_TAG="${VERSION}"
+          export TAG="${VERSION%.*}.${RELEASE_NUMBER}"
+          export SHORTER_TAG="${VERSION%.*}"
+          export SHORTEST_TAG="${VERSION%.*.*}"
+          
+          # Trim any whitespace from variables
+          PULL_TAG=$(echo "${PULL_TAG}" | xargs)
+          TAG=$(echo "${TAG}" | xargs)
+          SHORTER_TAG=$(echo "${SHORTER_TAG}" | xargs)
+          SHORTEST_TAG=$(echo "${SHORTEST_TAG}" | xargs)
+          
+          # Re-export cleaned variables
+          export PULL_TAG
+          export TAG
+          export SHORTER_TAG
+          export SHORTEST_TAG
           
           echo "Building with the following tags:"
-          echo "PULL_TAG: ${PULL_TAG}"
-          echo "TAG: ${TAG}"
-          echo "SHORTER_TAG: ${SHORTER_TAG}"
-          echo "SHORTEST_TAG: ${SHORTEST_TAG}"
+          echo "PULL_TAG: '${PULL_TAG}'"
+          echo "TAG: '${TAG}'"
+          echo "SHORTER_TAG: '${SHORTER_TAG}'"
+          echo "SHORTEST_TAG: '${SHORTEST_TAG}'"
           echo "Target repository: ${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION}"
+          echo "Dry run mode: ${DRY_RUN}"
           
-          # Attempt to build and push
-          if docker buildx bake -f docker-bake.hcl "${TARGET}" --push; then
-            echo "DONE: Build success >> exit with 0"
+          # Validate tag format
+          if [[ "${TAG}" =~ [[:space:]] ]]; then
+            echo "ERROR: TAG contains whitespace: '${TAG}'"
+            exit 1
+          fi
+          
+          # Choose build command based on dry-run setting
+          if [[ "${DRY_RUN}" == "true" ]]; then
+            echo "DRY RUN: Building without pushing..."
+            build_cmd="docker buildx bake -f docker-bake.hcl ${TARGET}"
+          else
+            echo "Building and pushing..."
+            build_cmd="docker buildx bake -f docker-bake.hcl ${TARGET} --push"
+          fi
+          
+          # Attempt to build (and optionally push)
+          if ${build_cmd}; then
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "DONE: Dry run build success (no push attempted)"
+            else
+              echo "DONE: Build and push success"
+            fi
             exit 0
           else
-            echo "ERROR: Build or push failed"
-            echo "Please verify:"
-            echo "1. Docker Hub credentials have push access to ${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION}"
-            echo "2. The repository ${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION} exists"
-            echo "3. The authentication token has sufficient permissions"
+            echo "ERROR: Build failed"
+            if [[ "${DRY_RUN}" != "true" ]]; then
+              echo "Authorization troubleshooting:"
+              echo "1. Verify Docker Hub token has push access to: ${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION}"
+              echo "2. Check if repository exists: https://hub.docker.com/r/${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION}"
+              echo "3. Ensure token has 'Public Repo Write' permissions"
+              echo "4. Try running with dry_run=true to test build without push"
+            fi
             exit 1
           fi
         shell: bash
