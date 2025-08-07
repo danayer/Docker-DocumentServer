@@ -116,6 +116,16 @@ jobs:
             exit 1
           fi
           
+          # Check if base testing image exists
+          echo "Checking if base testing image exists: ${TESTING_IMAGE}:${PULL_TAG}"
+          if ! docker manifest inspect "${TESTING_IMAGE}:${PULL_TAG}" >/dev/null 2>&1; then
+            echo "ERROR: Base testing image not found: ${TESTING_IMAGE}:${PULL_TAG}"
+            echo "This stable build requires a 4testing image to exist first."
+            echo "Please ensure the testing image is built and pushed before running stable build."
+            exit 1
+          fi
+          echo "✓ Base testing image found: ${TESTING_IMAGE}:${PULL_TAG}"
+          
           # Choose build command based on dry-run setting
           if [[ "${DRY_RUN}" == "true" ]]; then
             echo "DRY RUN: Building without pushing..."
@@ -141,6 +151,7 @@ jobs:
               echo "2. Check if repository exists: https://hub.docker.com/r/${COMPANY_NAME}/${PRODUCT_NAME}${PRODUCT_EDITION}"
               echo "3. Ensure token has 'Public Repo Write' permissions"
               echo "4. Try running with dry_run=true to test build without push"
+              echo "5. Ensure base testing image exists: ${TESTING_IMAGE}:${PULL_TAG}"
             fi
             exit 1
           fi
